@@ -1,4 +1,4 @@
-const { Octokit } = require("@octokit/rest");
+const { Octokit } = require("octokit");
 const minimatch = require("minimatch").minimatch;
 const process = require("process");
 const path = require("path");
@@ -26,105 +26,45 @@ async function getNewestPRNumberByBranch(octokit, branchName, repo) {
     return newestPR;
 }
 
-async function getRequiredCodeowners(changedFiles, repo, pr, octokit) {
-    const codeownersContent =
-        (await getContent(octokit, repo, ".github/CODEOWNERS", pr.base.ref)) ||
-        (await getContent(octokit, repo, "CODEOWNERS", pr.base.ref));
-
-    if (!codeownersContent) {
-        console.info("No CODEOWNERS file found");
-        process.exit(1);
-    }
-
-    const codeownersLines = codeownersContent.split("\n");
-
-    const codeowners = {};
-    for (const line of codeownersLines) {
-        if (!line.trim() || line.startsWith("#")) {
-            continue;
+const getGraphqlData = async (octokit, prNumber) => {
+const { repository } = await octokit.graphql(`
+query() {
+  repository(owner: "Appboy", name: "platform") {
+    pullRequest(number: ${prNumber}) {
+      title
+      number
+      isDraft
+      createdAt
+      reviewRequests(first:30) {
+        nodes {
+          asCodeOwner
+          requestedReviewer {
+            __typename
+            ... on User {
+              login
+              name
+            }
+            ... on Team {
+              name
+            }
+          }
         }
-
-        let [pattern, ...owners] = line.trim().split(/\s+/);
-
-        if (pattern === '*') {
-            updateCodeowners(owners);
-        } else {
-            if (!pattern.startsWith('/') && !pattern.startsWith('*')) {
-                pattern = `{**/,}${pattern}`;
-            }
-            if (!path.extname(pattern) && !pattern.endsWith('*')) {
-                pattern = `${pattern}{/**,}`;
-            }
-            for (let changedFile of changedFiles) {
-                changedFile = `/${changedFile}`;
-                if (minimatch(changedFile, pattern, { dot: true })) {
-                    console.log(`Match found: File - ${changedFile}, Pattern - ${pattern}`);
-                    updateCodeowners(owners);
-                }
-            }
+      }
+      author {
+        login
+        ... on User {
+          name
         }
+      }
     }
-
-    return codeowners;
-
-    function updateCodeowners(owners) {
-        for (let owner of owners) {
-            owner = owner.replace(/[<>\(\)\[\]\{\},;+*?=]/g, "");
-            owner = owner.replace("@", "").split("/").pop();
-            owner = owner.toLowerCase();
-            if (!codeowners.hasOwnProperty(owner)) {
-                codeowners[owner] = false;
-            }
-        }
-    }
+  }
 }
-
-async function getUserTeams(username, orgName, orgTeams, octokit) {
-    const teams = [];
-
-    for (const team of orgTeams) {
-        const teamMembers = await octokit.paginate(
-            octokit.teams.listMembersInOrg,
-            {
-                org: orgName,
-                team_slug: team.slug,
-            },
-            (response) => response.data
-        );
-
-        const memberLogins = teamMembers.map((member) => member.login);
-        if (memberLogins.includes(username)) {
-            teams.push(team);
-        }
-    }
-
-    return teams;
-}
-
-async function getContent(octokit, repo, path, ref) {
-    try {
-        const { data } = await octokit.repos.getContent({
-            owner: repo.owner.login,
-            repo: repo.name,
-            path,
-            ref,
-            headers: {
-                // Raw media type necessary for files over 1MB
-                accept: "application/vnd.github.v3.raw",
-            }
-        });
-	return data;
-    } catch (error) {
-        if (error.status === 404) {
-            return null;
-        }
-        throw error;
-    }
-}
+`);
+  return repository;
+};
 
 async function main() {
     const token = process.env["INPUT_TOKEN"];
-    const readOrgToken = process.env["INPUT_READ_ORG_SCOPED_TOKEN"];
     const orgName = process.env["INPUT_ORG_NAME"];
     const minApprovals = parseInt(process.env["INPUT_MIN_APPROVALS"], 10);
     const requireAllApprovalsLatestCommit =
@@ -134,145 +74,41 @@ async function main() {
     const approvalMode = process.env["INPUT_APPROVAL_MODE"];
 
     const octokit = new Octokit({ auth: token });
-    const readOrgOctokit = new Octokit({ auth: readOrgToken });
 
     const [owner, repoName] = ghRepo.split("/");
-    const repo = await octokit.repos.get({ owner, repo: repoName });
-
-    const allOrgTeams = await readOrgOctokit.paginate(
-        readOrgOctokit.teams.list,
-        { org: orgName },
-        (response) => response.data
-    );
 
     let prNumber;
-    if (process.env["INPUT_BRANCH"] && process.env["INPUT_BRANCH"] !== "") {
-        prNumber = await getNewestPRNumberByBranch(octokit, process.env["INPUT_BRANCH"], repo.data);
-    } else if (process.env["INPUT_PR_NUMBER"] && process.env["INPUT_PR_NUMBER"] !== "") {
+    if (process.env["INPUT_PR_NUMBER"] && process.env["INPUT_PR_NUMBER"] !== "") {
         prNumber = parseInt(process.env["INPUT_PR_NUMBER"], 10);
+    } else if (process.env["INPUT_BRANCH"] && process.env["INPUT_BRANCH"] !== "") {
+        prNumber = await getNewestPRNumberByBranch(octokit, process.env["INPUT_BRANCH"], repo.data);
     } else {
         const ghRefParts = ghRef.split("/");
         prNumber = parseInt(ghRefParts[ghRefParts.length - 2], 10);
     }
 
-    const { data: pr } = await octokit.pulls.get({
-        owner: repo.data.owner.login,
-        repo: repo.data.name,
-        pull_number: prNumber,
-    });
-
-    const reviews = await octokit.paginate(
-        octokit.pulls.listReviews,
-        {
-            owner: repo.data.owner.login,
-            repo: repo.data.name,
-            pull_number: pr.number,
-        },
-        (response) => response.data
-    );
-
-    const changedFiles = await octokit.paginate(
-        octokit.pulls.listFiles,
-        {
-            owner: repo.data.owner.login,
-            repo: repo.data.name,
-            pull_number: pr.number
-        },
-        (response) => response.data.map((f) => f.filename)
-    );
-
-    const requiredCodeownerEntities = await getRequiredCodeowners(changedFiles, repo.data, pr, octokit);
-    console.info(`Required codeowners: ${Object.keys(requiredCodeownerEntities).join(', ')}`);
-
-    let orgTeams = [];
-
-    if (process.env["INPUT_LIMIT_ORG_TEAMS_TO_CODEOWNERS_FILE"] === "true") {
-        const requiredCodeownerEntitySlugs = new Set(Object.keys(requiredCodeownerEntities));
-        const filteredTeams = allOrgTeams.filter((team) => {
-            return requiredCodeownerEntitySlugs.has(team.slug);
-        });
-
-        if (filteredTeams.length !== requiredCodeownerEntitySlugs.size) {
-            for (const slug of requiredCodeownerEntitySlugs) {
-                if (!filteredTeams.some((team) => team.slug === slug)) {
-                    console.warn(`  Team: ${slug} not found in Org: ${orgName}`);
-                }
-            }
+    const data = await getGraphqlData(octokit, prNumber);
+    const outstandingCodeownerRequests = [];
+    try {
+      const { reviewRequests } = data.pullRequest;
+      reviewRequests.nodes.forEach((request) => {
+        if (request.asCodeOwner) {
+          outstandingCodeownerRequests.push(request.requestedReviewer.name);
         }
-        orgTeams.push(...filteredTeams);
+      });
+    } catch (e) {
+      console.log("There was an error parsing request data");
+      console.log(e);
+      console.log(JSON.stringify(data));
+    }
+
+    const requiredApprovals = outstandingCodeownerRequests.length === 0;
+    let reason;
+    if (requiredApprovals) {
+      reason = "all codeowners have provided reviews";
     } else {
-        orgTeams = allOrgTeams;
+      reason = `codeowners ${outstandingCodeownerRequests.join(",")} have not provided reviews`;
     }
-
-    let approvedCodeowners = [];
-
-    for (const review of reviews) {
-        const userTeams = await getUserTeams(review.user.login, orgName, orgTeams, readOrgOctokit);
-        const reviewerLogin = review.user.login.toLowerCase();
-
-        if (review.state === "APPROVED") {
-            for (const team of userTeams) {
-                if (requiredCodeownerEntities.hasOwnProperty(team.slug)) {
-                    if (
-                        requireAllApprovalsLatestCommit === "true" &&
-                        review.commit_id !== pr.head.sha
-                    ) {
-                        console.info(
-                            `  ${reviewerLogin} ${review.state}: at commit: ${review.commit_id} for: ${team.slug} (not the latest commit, ignoring)`
-                        );
-                        continue;
-                    }
-                    requiredCodeownerEntities[team.slug] = true;
-                    if (!approvedCodeowners.includes(review.user.login)) {
-                        approvedCodeowners.push(review.user.login);
-                    }
-                    console.info(
-                        `  ${reviewerLogin} ${review.state}: at commit: ${review.commit_id} for: ${team.slug}`
-                    );
-                }
-            }
-
-            if (requiredCodeownerEntities.hasOwnProperty(reviewerLogin)) {
-                requiredCodeownerEntities[reviewerLogin] = true;
-                console.info(
-                    `  ${reviewerLogin} ${review.state}: at commit: ${review.commit_id}`
-                );
-            }
-        } else if (review.state === "CHANGES_REQUESTED") {
-            for (const team of userTeams) {
-                if (requiredCodeownerEntities.hasOwnProperty(team.slug)) {
-                    requiredCodeownerEntities[team.slug] = false;
-                    console.info(`  ${reviewerLogin} ${review.state}: for: ${team.slug}`);
-                }
-            }
-            if (requiredCodeownerEntities.hasOwnProperty(reviewerLogin)) {
-                requiredCodeownerEntities[reviewerLogin] = false;
-                console.info(`  ${reviewerLogin} ${review.state}: for: ${reviewerLogin}`);
-            }
-        } else {
-            console.debug(`  ${reviewerLogin} ${review.state}: ignoring`);
-        }
-    }
-
-    const allCodeownersApproved = Object.values(requiredCodeownerEntities).every((value) => value);
-    const anyCodeownerApproved = Object.values(requiredCodeownerEntities).some((value) => value);
-
-    const codeownersApprovalsCheck = approvalMode === "ANY" ? anyCodeownerApproved : allCodeownersApproved;
-    const minApprovalsMet = new Set(approvedCodeowners).size >= minApprovals;
-
-    let coReason;
-    if (approvalMode === "ALL") {
-        coReason = allCodeownersApproved ? "All codeowners have approved." : "Not all codeowners have approved.";
-    } else if (approvalMode === "ANY") {
-        coReason = anyCodeownerApproved ? "At least one of the codeowners has approved." : "None of the codeowners has approved.";
-    }
-
-    const maReason = minApprovalsMet
-        ? `total approvals:${approvedCodeowners.length} >= minimum approvals:${minApprovals}`
-        : `total approvals:${approvedCodeowners.length} < minimum approvals:${minApprovals}`;
-    const reason = `${coReason} and ${maReason}`;
-
-    const requiredApprovals = codeownersApprovalsCheck && minApprovalsMet;
 
     const outputPath = process.env["GITHUB_OUTPUT"];
     fs.appendFileSync(outputPath, `approved=${requiredApprovals.toString().toLowerCase()}`);
