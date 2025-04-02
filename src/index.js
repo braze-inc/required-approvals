@@ -93,7 +93,10 @@ async function main() {
       const { reviewRequests } = data.pullRequest;
       reviewRequests.nodes.forEach((request) => {
         if (request.asCodeOwner) {
-          outstandingCodeownerRequests.push(request.requestedReviewer.name);
+	  // requestedReviewer is actually null since GITHUB_TOKEN doesn't have
+          // permissions to read team data/names. For now, we can just not
+	  // include specific team names since they're listed on the PR anyway.
+          outstandingCodeownerRequests.push("TEAM");
         }
       });
     } catch (e) {
