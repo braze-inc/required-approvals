@@ -35,6 +35,9 @@ query() {
       number
       isDraft
       createdAt
+      baseRef {
+        name
+      }
       reviewRequests(first:30) {
         nodes {
           asCodeOwner
@@ -90,15 +93,19 @@ async function main() {
     const data = await getGraphqlData(octokit, prNumber);
     const outstandingCodeownerRequests = [];
     try {
-      const { reviewRequests } = data.pullRequest;
-      reviewRequests.nodes.forEach((request) => {
-        if (request.asCodeOwner) {
-	  // requestedReviewer is actually null since GITHUB_TOKEN doesn't have
-          // permissions to read team data/names. For now, we can just not
-	  // include specific team names since they're listed on the PR anyway.
-          outstandingCodeownerRequests.push("TEAM");
-        }
-      });
+      const { baseRef, reviewRequests } = data.pullRequest;
+      if (baseRef && baseRef.name && baseRef.name !== "develop") {
+        console.log("Skipping check because PR is not against develop branch");
+      } else {
+        reviewRequests.nodes.forEach((request) => {
+          if (request.asCodeOwner) {
+	    // requestedReviewer is actually null since GITHUB_TOKEN doesn't have
+            // permissions to read team data/names. For now, we can just not
+            // include specific team names since they're listed on the PR anyway.
+            outstandingCodeownerRequests.push("TEAM");
+          }
+        });
+      }
     } catch (e) {
       console.log("There was an error parsing request data");
       console.log(e);
