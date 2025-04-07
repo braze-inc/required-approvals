@@ -35,9 +35,8 @@ query() {
       number
       isDraft
       createdAt
-      baseRef {
-        name
-      }
+      baseRefName
+      headRefName
       reviewRequests(first:30) {
         nodes {
           asCodeOwner
@@ -93,9 +92,11 @@ async function main() {
     const data = await getGraphqlData(octokit, prNumber);
     const outstandingCodeownerRequests = [];
     try {
-      const { baseRef, reviewRequests } = data.pullRequest;
-      if (baseRef && baseRef.name && baseRef.name !== "develop") {
+      const { baseRefName, headRefName, reviewRequests } = data.pullRequest;
+      if (baseRefName !== "develop") {
         console.log("Skipping check because PR is not against develop branch");
+      } else if (headRefName.startsWith("merge-release")) {
+	console.log("Skipping check because this is a mergeback PR");
       } else {
         reviewRequests.nodes.forEach((request) => {
           if (request.asCodeOwner) {
@@ -128,6 +129,8 @@ async function main() {
         process.exit(0);
     } else {
         console.warn(`Required approvals not met: ${reason}`);
+	console.warn("This GitHub action can't see which particular teams are missing.");
+	console.warn("Refer to the PR reviewers list in GitHub for this information.");
         process.exit(1);
     }
 
