@@ -27728,6 +27728,7 @@ const src_process = __nccwpck_require__(932);
 const path = __nccwpck_require__(6928);
 const fs = __nccwpck_require__(9896);
 
+let cachedCodeowners = null;
 async function getRateLimit(octokit) {
   const { rateLimit } = await octokit.graphql(`
     query {
@@ -27807,7 +27808,8 @@ async function getTeamDirectory(octokit) {
   return userDirectory;
 }
 
-const getCodeowners = async (octokit, changedFiles) => {
+const updateCodeownersCache = async (octokit) => {
+  console.log("Pulling down codeowners");
   const { data } = await octokit.repos.getContent({
     owner: "Appboy",
     repo: "platform",
@@ -27818,8 +27820,14 @@ const getCodeowners = async (octokit, changedFiles) => {
       accept: "application/vnd.github.v3.raw",
     }
   });
+  cachedCodeowners = data;
+  console.log("Done pulling down codeowners");
+  return data;
+};
 
-  const codeownersContent = data;
+const getCodeowners = async (prNumber, changedFiles) => {
+  console.log("Processing PR #" + prNumber);
+  const codeownersContent = cachedCodeowners;
 
   if (!codeownersContent) {
     console.info("No CODEOWNERS file found");
@@ -27848,7 +27856,7 @@ const getCodeowners = async (octokit, changedFiles) => {
         changedFile = `/${changedFile}`;
         // console.log(changedFile)
         if (minimatch(changedFile, pattern, { dot: true })) {
-          console.log(`Match found: File - ${changedFile}, Pattern - ${pattern}`);
+          // console.log(`Match found: File - ${changedFile}, Pattern - ${pattern}`);
           updateCodeowners(owners);
         }
       }
@@ -27890,6 +27898,37 @@ async function getNewestPRNumberByBranch(octokit, branchName, repo) {
     const newestPR = pullRequests[0].number;
     return newestPR;
 }
+
+const getRecentPullRequests = async (octokit) => {
+  const { repository } = await octokit.graphql(`
+query() {
+  repository(owner: "Appboy", name: "platform") {
+    pullRequests(baseRefName:"develop", states: [MERGED], first: 100, orderBy: {field: CREATED_AT, direction: DESC}) {
+      edges {
+        node {
+          title
+          number
+          isDraft
+          createdAt
+          files(first:100) {
+            nodes {
+              path
+            }
+          }
+          author {
+            login
+            ... on User {
+              name
+            }
+          }
+        }
+      }
+    }
+  }
+}
+`);
+  return repository;
+};
 
 const getGraphqlData = async (octokit, prNumber) => {
 const { repository } = await octokit.graphql(`
@@ -27960,6 +27999,8 @@ fragment ReviewerInfo on RequestedReviewer {
 // 1 to get PR data, including timeline events and files changed
 // 1 to get the most recent CODEOWNERS file contents
 
+
+
 async function main() {
     const token = src_process.env["INPUT_TOKEN"];
     const orgName = src_process.env["INPUT_ORG_NAME"];
@@ -27974,6 +28015,38 @@ async function main() {
     const octokitRest = new OctokitRest.Octokit({ auth: token });
 
     const [owner, repoName] = ghRepo.split("/");
+
+    await updateCodeownersCache(octokitRest);
+    const { pullRequests } = await getRecentPullRequests(octokit);
+    console.log("Got recent pullRequests: ", pullRequests);
+    const prData = {};
+    pullRequests.edges.forEach(async ({ node }) => {
+      const prNumber = node.number;
+      const filesChanged = node.files.nodes.map(({ path }) => path);
+      const requiredCodeowners = await getCodeowners(prNumber, filesChanged);
+      prData[prNumber] = { numCodeowners: requiredCodeowners.length, codeowners: requiredCodeowners };
+      if (prNumber === pullRequests.edges[pullRequests.edges.length - 1].node.number) {
+        let maxCodeowners = 0;
+        Object.keys(prData).forEach((num) => {
+          if (prData[num].numCodeowners > maxCodeowners) {
+            maxCodeowners = prData[num].numCodeowners;
+          }
+        });
+
+        for (let i = maxCodeowners; i > 1; i--) {
+          console.log(`PRs with ${i} teams:`);
+          Object.keys(prData).forEach((num) => {
+            const pr = prData[num];
+            if (pr.numCodeowners === i) {
+              console.log(`#${num}: ${pr.codeowners}`);
+            }
+          });
+        }
+      }
+    });
+
+
+    return;
 
     let prNumber;
     if (src_process.env["INPUT_PR_NUMBER"] && src_process.env["INPUT_PR_NUMBER"] !== "") {
@@ -28000,7 +28073,7 @@ async function main() {
         src_process.exit(0);
       }
       
-      const requiredCodeowners = await getCodeowners(octokitRest, data.pullRequest.files.nodes.map(({ path }) => path));
+      const requiredCodeowners = await getCodeowners(prNumber, data.pullRequest.files.nodes.map(({ path }) => path));
       console.info(`Required codeowners: ${requiredCodeowners.join(', ')}`);
       const userDirectory = await getTeamDirectory(octokit);
       const approvals = timeline.nodes.filter(({ state }) => state === "APPROVED");
