@@ -1,9 +1,8 @@
 const { Octokit } = require("octokit");
 const OctokitRest = require("@octokit/rest");
-const minimatch = require("minimatch").minimatch;
 const process = require("process");
-const path = require("path");
 const fs = require("fs");
+const { getCodeowners } = require("./getCodeowners.js");
 
 async function getRateLimit(octokit) {
   const { rateLimit } = await octokit.graphql(`
@@ -84,7 +83,7 @@ async function getTeamDirectory(octokit) {
   return userDirectory;
 }
 
-const getCodeowners = async (octokit, changedFiles) => {
+const getCodeownersData = async (octokit, changedFiles) => {
   const { data } = await octokit.repos.getContent({
     owner: "Appboy",
     repo: "platform",
@@ -103,47 +102,7 @@ const getCodeowners = async (octokit, changedFiles) => {
     process.exit(1);
   }
 
-  const codeownersLines = codeownersContent.split("\n");
-  const codeowners = {};
-  for (const line of codeownersLines) {
-    if (!line.trim() || line.startsWith("#")) {
-      continue;
-    }
-
-    let [pattern, ...owners] = line.trim().split(/\s+/);
-
-    if (pattern === '*') {
-      updateCodeowners(owners);
-    } else {
-      if (!pattern.startsWith('/') && !pattern.startsWith('*')) {
-        pattern = `{**/,}${pattern}`;
-      }
-      if (!path.extname(pattern) && !pattern.endsWith('*')) {
-        pattern = `${pattern}{/**,}`;
-      }
-      for (let changedFile of changedFiles) {
-        changedFile = `/${changedFile}`;
-        // console.log(changedFile)
-        if (minimatch(changedFile, pattern, { dot: true })) {
-          console.log(`Match found: File - ${changedFile}, Pattern - ${pattern}`);
-          updateCodeowners(owners);
-        }
-      }
-    }
-  }
-
-  return Object.keys(codeowners);
-
-  function updateCodeowners(owners) {
-    for (let owner of owners) {
-      owner = owner.replace(/[<>\(\)\[\]\{\},;+*?=]/g, "");
-      owner = owner.replace("@", "").split("/").pop();
-      owner = owner.toLowerCase();
-      if (!codeowners.hasOwnProperty(owner)) {
-        codeowners[owner] = false;
-      }
-    }
-  }
+  return getCodeowners(codeownersContent, changedFiles);
 };
 
 async function getNewestPRNumberByBranch(octokit, branchName, repo) {
@@ -169,8 +128,8 @@ async function getNewestPRNumberByBranch(octokit, branchName, repo) {
 }
 
 const getGraphqlData = async (octokit, prNumber) => {
-const { repository } = await octokit.graphql(`
-query() {
+  const { repository } = await octokit.graphql.paginate(`
+query($cursor: String) {
   repository(owner: "Appboy", name: "platform") {
     pullRequest(number: ${prNumber}) {
       title
@@ -179,9 +138,13 @@ query() {
       createdAt
       baseRefName
       headRefName
-      files(first:100) {
+      files(first:100, after: $cursor) {
         nodes {
           path
+        }
+        pageInfo {
+          endCursor
+          hasNextPage
         }
       }
       timeline(last:100) {
@@ -232,8 +195,10 @@ fragment ReviewerInfo on RequestedReviewer {
   return repository;
 };
 
-// There are 2 API requests
-// (the user directory / team mapping is omitted, because it is cached once per day)
+// There are 3 API requests
+// 1 for the user directory / team mapping
+//   Caching is a noop now because this runs in a VM, but we could sync teams over
+//   to ClickHouse or some other remote store, if we want to later on.
 // 1 to get PR data, including timeline events and files changed
 // 1 to get the most recent CODEOWNERS file contents
 
@@ -276,8 +241,8 @@ async function main() {
 	      console.log("Skipping check because this is a mergeback PR");
         process.exit(0);
       }
-      
-      const requiredCodeowners = await getCodeowners(octokitRest, data.pullRequest.files.nodes.map(({ path }) => path));
+
+      const requiredCodeowners = await getCodeownersData(octokitRest, data.pullRequest.files.nodes.map(({ path }) => path));
       console.info(`Required codeowners: ${requiredCodeowners.join(', ')}`);
       const userDirectory = await getTeamDirectory(octokit);
       const approvals = timeline.nodes.filter(({ state }) => state === "APPROVED");
@@ -286,7 +251,11 @@ async function main() {
       const approvingUsers = approvals.map(({ author }) => author.login);
       const approvedTeams = [];
       approvingUsers.forEach((user) => {
-        approvedTeams.push(...userDirectory[user]);
+        // We must check userDirectory first, because users who are on the timeline
+        // may have been removed from the org
+        if (userDirectory[user]) {
+          approvedTeams.push(...userDirectory[user]);
+        }
       });
   
       requiredCodeowners.forEach((owner) => {
