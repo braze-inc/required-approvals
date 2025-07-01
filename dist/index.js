@@ -27829,8 +27829,11 @@ async function getTeamDirectory(octokit) {
       return userDirectory;
     }
   } catch(e) {
+    // Silencing these errors. Caching won't work in production because this runs in a VM.
+    /*
     console.log("Error reading cached user directory");
     console.log(e);
+    */
   }
 
   console.log("Updating team directory");
@@ -28072,22 +28075,22 @@ async function main() {
     console.log(rateLimitData);
     const requiredApprovals = outstandingCodeownerRequests.length === 0;
     let reason;
+    let teams = "";
     if (requiredApprovals) {
       reason = "all codeowners have provided reviews";
     } else {
-      reason = `codeowners ${outstandingCodeownerRequests.join(", ")} have not provided reviews`;
+      teams = outstandingCodeownerRequests.join(", ");
+      reason = `codeowners ${teams} have not provided reviews`;
     }
 
     const outputPath = src_process.env["GITHUB_OUTPUT"];
-    fs.appendFileSync(outputPath, `approved=${requiredApprovals.toString().toLowerCase()}`);
+    fs.appendFileSync(outputPath, `teams=${teams}`);
 
     if (requiredApprovals) {
         console.info(`Required approvals met: ${reason}`);
         src_process.exit(0);
     } else {
         console.warn(`Required approvals not met: ${reason}`);
-	console.warn("This GitHub action can't see which particular teams are missing.");
-	console.warn("Refer to the PR reviewers list in GitHub for this information.");
         src_process.exit(1);
     }
 

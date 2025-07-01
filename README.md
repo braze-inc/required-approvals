@@ -34,8 +34,8 @@ Checks if the required codeowners have approved a PR and requires a minimum numb
   - Determines the approval requirement for codeowners. If set to "ALL", all codeowners must approve. If set to "ANY", at least one approval from a codeowner is sufficient. If not provided, the default is "ALL".
 
 ### Outputs:
-- `approved`
-  - `true` if all required approvals are met, `false` otherwise
+- `teams`
+  - String, comma-separated list of teams with outstanding review requests
 
 ### How to use this GitHub Action:
 1. Ensure your repo has a codeowners file at `/.github/CODEOWNERS` or `/CODEOWNERS`
