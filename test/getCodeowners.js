@@ -34,7 +34,7 @@ test('getCodeowners', { concurrency: true }, (t) => {
       "shared_code/lib/shared/braze/msg_pipeline/checks/user_is_capable_of_receiving_push.rb",
       "shared_code/lib/shared/braze/msg_pipeline/hooks/exit_users_from_canvas.rb",
     ]);
-    assert.deepStrictEqual(codeowners, ["email", "push", "sms", "whats-app", "core-messaging", "clx"]);
+    assert.deepStrictEqual(codeowners, ["push", "sms", "whats-app", "core-messaging", "clx", "email"]);
   });
 
   t.test("changes with multiple codeowners on a single file", () => {
@@ -47,5 +47,20 @@ test('getCodeowners', { concurrency: true }, (t) => {
   t.test("changes with no codeowners", () => {
     const codeowners = getCodeowners(codeownersData, ["blah.rb"]);
     assert.deepStrictEqual(codeowners, []);
+  });
+
+  t.test("changes that would match multiple rules", () => {
+    /*
+    These rules should result in only frontend-ix being the owner, as later rules override earlier ones.
+
+    ```
+      /containers/dashboard/ @Appboy/sidekiq-and-monolith-foundations
+      /containers/dashboard/Dockerfile.test.frontend @Appboy/frontend-ix
+    ```
+    */
+    const codeowners = getCodeowners(codeownersData, [
+      "/containers/dashboard/Dockerfile.test.frontend",
+    ]);
+    assert.deepStrictEqual(codeowners, ["frontend-ix"]);
   });
 });
