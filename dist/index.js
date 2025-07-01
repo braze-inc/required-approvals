@@ -24138,31 +24138,53 @@ const path = __nccwpck_require__(6928);
 
 function getCodeowners(codeownersFile, changedFiles) {
   const codeownersLines = codeownersFile.split("\n");
-  const codeowners = {};
-  for (const line of codeownersLines) {
-    if (!line.trim() || line.startsWith("#")) {
-      continue;
-    }
 
-    let [pattern, ...owners] = line.trim().split(/\s+/);
+  // Format: { "file": ["@owner1", "@owner2"] }
+  const fileOwners = {};
+  for (const changedFile of changedFiles) {
+    const normalizedFile = `/${changedFile}`;
+    let matchedOwners = null;
 
-    if (pattern === '*') {
-      updateCodeowners(owners);
-    } else {
+    // Keep this handy for logging
+    let lastMatchedPattern = null;
+    for (const line of codeownersLines) {
+      if (!line.trim() || line.trim().startsWith("#")) {
+        continue;
+      }
+
+      let [pattern, ...owners] = line.trim().split(/\s+/);
+      if (!pattern) {
+        continue;
+      }
+
+      let globPattern = pattern;
+
       if (!pattern.startsWith('/') && !pattern.startsWith('*')) {
-        pattern = `{**/,}${pattern}`;
+        globPattern = `{**/,}${pattern}`;
       }
+
       if (!path.extname(pattern) && !pattern.endsWith('*')) {
-        pattern = `${pattern}{/**,}`;
+        globPattern = `${pattern}{/**,}`;
       }
-      for (let changedFile of changedFiles) {
-        changedFile = `/${changedFile}`;
-        if (minimatch(changedFile, pattern, { dot: true })) {
-          console.log(`Match found: File - ${changedFile}, Pattern - ${pattern}`);
-          updateCodeowners(owners);
-        }
+
+      // Attempt match
+      if (minimatch(normalizedFile, globPattern, { dot: true })) {
+        // Continually overwrite owners, so that the last match wins
+        matchedOwners = owners;
+        lastMatchedPattern = globPattern;
       }
     }
+
+    if (matchedOwners) {
+      console.log(`Match found: File - ${changedFile}, Pattern - ${lastMatchedPattern}, Owner - ${matchedOwners}`);
+      fileOwners[changedFile] = matchedOwners;
+    }
+  }
+
+  const codeowners = {};
+  for (const file in fileOwners) {
+    const owners = fileOwners[file];
+    updateCodeowners(owners)
   }
 
   return Object.keys(codeowners);
@@ -27975,7 +27997,7 @@ fragment ReviewerInfo on RequestedReviewer {
 // There are 3 API requests
 // 1 for the user directory / team mapping
 //   Caching is a noop now because this runs in a VM, but we could sync teams over
-//   to ClickHouse or some other remote store,g if we want to later on.
+//   to ClickHouse or some other remote store, if we want to later on.
 // 1 to get PR data, including timeline events and files changed
 // 1 to get the most recent CODEOWNERS file contents
 
