@@ -30,8 +30,11 @@ async function getTeamDirectory(octokit) {
       return userDirectory;
     }
   } catch(e) {
+    // Silencing these errors. Caching won't work in production because this runs in a VM.
+    /*
     console.log("Error reading cached user directory");
     console.log(e);
+    */
   }
 
   console.log("Updating team directory");
@@ -289,8 +292,6 @@ async function main() {
         process.exit(0);
     } else {
         console.warn(`Required approvals not met: ${reason}`);
-	console.warn("This GitHub action can't see which particular teams are missing.");
-	console.warn("Refer to the PR reviewers list in GitHub for this information.");
         process.exit(1);
     }
 
