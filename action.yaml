@@ -35,8 +35,8 @@ inputs:
     required: false
     default: "ALL"
 outputs:
-  approved:
-    description: "True if all required approvals are met, false otherwise"
+  teams:
+    description: "Teams that still need to provide reviews"
 
 runs:
   using: "node20"
