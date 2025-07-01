@@ -273,14 +273,16 @@ async function main() {
     console.log(rateLimitData);
     const requiredApprovals = outstandingCodeownerRequests.length === 0;
     let reason;
+    let teams = "";
     if (requiredApprovals) {
       reason = "all codeowners have provided reviews";
     } else {
-      reason = `codeowners ${outstandingCodeownerRequests.join(", ")} have not provided reviews`;
+      teams = outstandingCodeownerRequests.join(", ");
+      reason = `codeowners ${teams} have not provided reviews`;
     }
 
     const outputPath = process.env["GITHUB_OUTPUT"];
-    fs.appendFileSync(outputPath, `approved=${requiredApprovals.toString().toLowerCase()}`);
+    fs.appendFileSync(outputPath, `teams=${teams}`);
 
     if (requiredApprovals) {
         console.info(`Required approvals met: ${reason}`);
