@@ -258,6 +258,8 @@ async function main() {
         // may have been removed from the org
         if (userDirectory[user]) {
           approvedTeams.push(...userDirectory[user]);
+          // Push user onto approved teams as well, to account for any files owned by individuals
+          approvedTeams.push(user)
         }
       });
   
