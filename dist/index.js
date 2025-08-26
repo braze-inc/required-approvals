@@ -27929,7 +27929,7 @@ async function getNewestPRNumberByBranch(octokit, branchName, repo) {
     return newestPR;
 }
 
-const getGraphqlData = async (octokit, prNumber) => {
+const getGraphqlFileData = async (octokit, prNumber) => {
   const { repository } = await octokit.graphql.paginate(`
 query($cursor: String) {
   repository(owner: "Appboy", name: "platform") {
@@ -27949,7 +27949,31 @@ query($cursor: String) {
           hasNextPage
         }
       }
-      timeline(last:100) {
+      author {
+        login
+        ... on User {
+          name
+        }
+      }
+    }
+  }
+}
+`);
+  return repository;
+};
+
+const getGraphqlReviewData = async (octokit, prNumber) => {
+  const { repository } = await octokit.graphql.paginate(`
+query($cursor: String) {
+  repository(owner: "Appboy", name: "platform") {
+    pullRequest(number: ${prNumber}) {
+      title
+      number
+      isDraft
+      createdAt
+      baseRefName
+      headRefName
+      timeline(first:100, after: $cursor) {
         nodes {
           ... on ReviewRequestedEvent {
             __typename
@@ -27973,6 +27997,10 @@ query($cursor: String) {
               login
             }
           }
+        }
+        pageInfo {
+          endCursor
+          hasNextPage
         }
       }
       author {
@@ -28029,11 +28057,13 @@ async function main() {
         prNumber = parseInt(ghRefParts[ghRefParts.length - 2], 10);
     }
 
-    const data = await getGraphqlData(octokit, prNumber);
+    const data = await getGraphqlFileData(octokit, prNumber);
+    const reviewData = await getGraphqlReviewData(octokit, prNumber);
 
     const outstandingCodeownerRequests = [];
     try {
-      const { baseRefName, headRefName, timeline } = data.pullRequest;
+      const { baseRefName, headRefName } = data.pullRequest;
+      const { timeline } = reviewData.pullRequest;
       if (baseRefName !== "develop") {
         console.log("Skipping check because PR is not against develop branch");
         src_process.exit(0);
