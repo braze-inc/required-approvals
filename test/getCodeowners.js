@@ -63,4 +63,11 @@ test('getCodeowners', { concurrency: true }, (t) => {
     ]);
     assert.deepStrictEqual(codeowners, ["frontend-ix"]);
   });
+
+  t.test("changes to files with spaces in the name", () => {
+    const codeowners = getCodeowners(codeownersData, [
+      "/containers/dashboard/Docker Thing.test",
+    ]);
+    assert.deepStrictEqual(codeowners, ["frontend-ix"]);
+  });
 });

@@ -8,3 +8,4 @@
 /shared_code/lib/shared/braze/msg_pipeline/hooks/exit_users_from_canvas.rb @Appboy/clx
 /containers/dashboard/ @Appboy/sidekiq-and-monolith-foundations
 /containers/dashboard/Dockerfile.test.frontend @Appboy/frontend-ix
+/containers/dashboard/Docker\ Thing.test @Appboy/frontend-ix
