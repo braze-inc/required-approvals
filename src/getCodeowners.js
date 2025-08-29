@@ -6,31 +6,35 @@ function getCodeowners(codeownersFile, changedFiles) {
 
   // Format: { "file": ["@owner1", "@owner2"] }
   const fileOwners = {};
-  for (const changedFile of changedFiles) {
-    const normalizedFile = `/${changedFile}`;
-    let matchedOwners = null;
 
-    // Keep this handy for logging
-    let lastMatchedPattern = null;
-    for (const line of codeownersLines) {
-      if (!line.trim() || line.trim().startsWith("#")) {
-        continue;
-      }
+  // Keep this handy for logging
+  let lastMatchedPattern = null;
+  for (const line of codeownersLines) {
+    if (!line.trim() || line.trim().startsWith("#")) {
+      continue;
+    }
 
-      let [pattern, ...owners] = line.trim().split(/\s+/);
-      if (!pattern) {
-        continue;
-      }
+    // let [pattern, ...owners] = line.trim().split(/\s+/);
+    // let [pattern, ...owners] = line.trim().match(/^[^@]+/)
+    const pattern = line.trim().match(/^[^@]+/)[0].trim();
+    const owners = line.trim().match(/@\S+/g);
+    if (!pattern) {
+      continue;
+    }
 
-      let globPattern = pattern;
+    let globPattern = pattern;
 
-      if (!pattern.startsWith('/') && !pattern.startsWith('*')) {
-        globPattern = `{**/,}${pattern}`;
-      }
+    if (!pattern.startsWith('/') && !pattern.startsWith('*')) {
+      globPattern = `{**/,}${pattern}`;
+    }
 
-      if (!path.extname(pattern) && !pattern.endsWith('*')) {
-        globPattern = `${pattern}{/**,}`;
-      }
+    if (!path.extname(pattern) && !pattern.endsWith('*')) {
+      globPattern = `${pattern}{/**,}`;
+    }
+
+    for (const changedFile of changedFiles) {
+      const normalizedFile = `/${changedFile}`;
+      let matchedOwners = null;
 
       // Attempt match
       if (minimatch(normalizedFile, globPattern, { dot: true })) {
@@ -38,11 +42,11 @@ function getCodeowners(codeownersFile, changedFiles) {
         matchedOwners = owners;
         lastMatchedPattern = globPattern;
       }
-    }
 
-    if (matchedOwners) {
-      console.log(`Match found: File - ${changedFile}, Pattern - ${lastMatchedPattern}, Owner - ${matchedOwners}`);
-      fileOwners[changedFile] = matchedOwners;
+      if (matchedOwners) {
+        // console.log(`Match found: File - ${changedFile}, Pattern - ${lastMatchedPattern}, Owner - ${matchedOwners}`);
+        fileOwners[changedFile] = matchedOwners;
+      }
     }
   }
 
@@ -51,6 +55,9 @@ function getCodeowners(codeownersFile, changedFiles) {
     const owners = fileOwners[file];
     updateCodeowners(owners)
   }
+
+  // Log file owners in the action run to help w/ debugging
+  console.log(fileOwners)
 
   return Object.keys(codeowners);
 

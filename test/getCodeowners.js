@@ -34,7 +34,7 @@ test('getCodeowners', { concurrency: true }, (t) => {
       "shared_code/lib/shared/braze/msg_pipeline/checks/user_is_capable_of_receiving_push.rb",
       "shared_code/lib/shared/braze/msg_pipeline/hooks/exit_users_from_canvas.rb",
     ]);
-    assert.deepStrictEqual(codeowners, ["push", "sms", "whats-app", "core-messaging", "clx", "email"]);
+    assert.deepStrictEqual(codeowners, ["email", "push", "sms", "whats-app", "core-messaging", "clx"]);
   });
 
   t.test("changes with multiple codeowners on a single file", () => {
