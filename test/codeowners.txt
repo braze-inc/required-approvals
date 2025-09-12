@@ -6,6 +6,6 @@
 /shared_code/lib/shared/braze/msg_pipeline/checks/user_did_not_perform_exit_criteria_event.rb @Appboy/clx
 /shared_code/lib/shared/braze/msg_pipeline/checks/user_is_capable_of_receiving_push.rb @Appboy/push
 /shared_code/lib/shared/braze/msg_pipeline/hooks/exit_users_from_canvas.rb @Appboy/clx
-/containers/dashboard/ @Appboy/sidekiq-and-monolith-foundations
+/containers/dashboard/ @Appboy/monolith-foundations
 /containers/dashboard/Dockerfile.test.frontend @Appboy/frontend-ix
 /containers/dashboard/Docker\ Thing.test @Appboy/frontend-ix
