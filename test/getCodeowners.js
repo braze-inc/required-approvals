@@ -54,7 +54,7 @@ test('getCodeowners', { concurrency: true }, (t) => {
     These rules should result in only frontend-ix being the owner, as later rules override earlier ones.
 
     ```
-      /containers/dashboard/ @Appboy/sidekiq-and-monolith-foundations
+      /containers/dashboard/ @Appboy/monolith-foundations
       /containers/dashboard/Dockerfile.test.frontend @Appboy/frontend-ix
     ```
     */
