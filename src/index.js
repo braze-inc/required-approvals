@@ -86,6 +86,10 @@ async function getTeamDirectory(octokit) {
   return userDirectory;
 }
 
+const deriveTeamsFromUserDirectory = (directory) => {
+  return new Set(Object.values(directory).flat())
+}
+
 const getCodeownersData = async (octokit, changedFiles) => {
   const { data } = await octokit.repos.getContent({
     owner: "Appboy",
@@ -278,6 +282,7 @@ async function main() {
       const requiredCodeowners = await getCodeownersData(octokitRest, data.pullRequest.files.nodes.map(({ path }) => path));
       console.info(`Required codeowners: ${requiredCodeowners.join(', ')}`);
       const userDirectory = await getTeamDirectory(octokit);
+      const teams = deriveTeamsFromUserDirectory(userDirectory);
       const approvals = timeline.nodes.filter(({ state }) => state === "APPROVED");
   
       // Get the teams associated with all users who have provided an approval
@@ -294,7 +299,7 @@ async function main() {
       });
   
       requiredCodeowners.forEach((owner) => {
-        if (!approvedTeams.includes(owner)) {
+        if (!approvedTeams.includes(owner) && teams.has(owner)) {
           outstandingCodeownerRequests.push(owner);
         };
       });
