@@ -9,3 +9,5 @@
 /containers/dashboard/ @Appboy/monolith-foundations
 /containers/dashboard/Dockerfile.test.frontend @Appboy/frontend-ix
 /containers/dashboard/Docker\ Thing.test @Appboy/frontend-ix
+/dashboard/patches @Appboy/frontend-ix
+/dashboard/patches/@tiptap* @Appboy/composition-infrastructure

@@ -70,4 +70,18 @@ test('getCodeowners', { concurrency: true }, (t) => {
     ]);
     assert.deepStrictEqual(codeowners, ["frontend-ix"]);
   });
+
+  t.test("changes to files with @ in the name", () => {
+    const codeowners = getCodeowners(codeownersData, [
+      "/dashboard/patches/@tiptap-123",
+    ]);
+    assert.deepStrictEqual(codeowners, ["composition-infrastructure"]);
+  });
+
+  t.test("changes to files similar to a rule with @ in the name", () => {
+    const codeowners = getCodeowners(codeownersData, [
+      "/dashboard/patches/another-file",
+    ]);
+    assert.deepStrictEqual(codeowners, ["frontend-ix"]);
+  });
 });

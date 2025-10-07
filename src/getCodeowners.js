@@ -17,8 +17,7 @@ function getCodeowners(codeownersFile, changedFiles) {
         continue;
       }
 
-      const pattern = line.trim().match(/^[^@]+/)[0].trim();
-      const owners = line.trim().match(/@\S+/g);
+      let [pattern, ...owners] = line.trim().split(/(?<!\\)\s+/);
       if (!pattern) {
         continue;
       }
